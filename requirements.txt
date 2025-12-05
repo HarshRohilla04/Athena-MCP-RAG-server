@@ -1,0 +1,5 @@
+fastmcp>=2.0.0
+pinecone[grpc]>=5.0.1
+sentence-transformers>=3.0.1
+pdfplumber>=0.10.4
+python-dotenv>=1.0.0
