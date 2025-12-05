@@ -28,8 +28,7 @@ mcp = FastMCP(
 # Global Configuration (initialized once at startup)
 # ----------------------------------------------------------------------
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-index_name = os.getenv("PINECONE_INDEX_NAME", "athena-rag-storage")
-index = pc.Index(index_name)
+index = pc.Index("athena-rag-storage")    # <- set the index name of the pinecone storage
 
 # Embedding model - all-MiniLM-L6-v2 is fast and effective for RAG
 model = SentenceTransformer("all-MiniLM-L6-v2")
