@@ -18,11 +18,7 @@ load_dotenv()
 # ----------------------------------------------------------------------
 # Athena — Your Personal AI Professor
 # ----------------------------------------------------------------------
-mcp = FastMCP(
-    name="Athena",
-    description="Your personal AI professor that reads your research papers and teaches you",
-    version="1.0.0"
-)
+mcp = FastMCP(name="Athena")
 
 # ----------------------------------------------------------------------
 # Global Configuration (initialized once at startup)
