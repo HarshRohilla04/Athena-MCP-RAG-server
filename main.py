@@ -41,28 +41,53 @@ def clean_text(text: str) -> str:
 # ----------------------------------------------------------------------
 @mcp.tool()
 def list_documents() -> str:
-    """List all documents currently in the knowledge base."""
+    """List all documents currently in the knowledge base using Pinecone stats API."""
     try:
-        broad_emb = model.encode("any document").tolist()
-        results = index.query(vector=broad_emb, top_k=1000, include_metadata=True)
-        sources = {}
-        for m in results["matches"]:
-            src = m["metadata"].get("source", "unknown.pdf")
-            sources[src] = sources.get(src, 0) + 1
+        stats = index.describe_index_stats()
         
-        docs = sorted([{"name": name, "chunks": count} for name, count in sources.items()], 
-                    key=lambda x: x["name"])
+        documents = {}
         
-        if not docs:
-            return "No documents found in the knowledge base yet. Upload one using ingest_pdf!"
+        # Get namespace stats (has vector counts per namespace)
+        if hasattr(stats, 'namespaces'):
+            namespaces = stats.namespaces
+        else:
+            namespaces = {}
         
-        summary = f"Found {len(docs)} document(s):\n\n"
-        for d in docs:
-            summary += f"• {d['name']} ({d['chunks']} chunks)\n"
+        # For each namespace, sample vectors to get source metadata
+        for ns_name, ns_stats in namespaces.items():
+            try:
+                # Query sample vectors
+                sample_emb = model.encode("document content").tolist()
+                results = index.query(
+                    vector=sample_emb,
+                    top_k=50,
+                    include_metadata=True,
+                    namespace=ns_name
+                )
+                
+                for match in results["matches"]:
+                    src = match["metadata"].get("source", "unknown")
+                    if src not in documents:
+                        documents[src] = {"namespaces": set(), "total_chunks": 0}
+                    documents[src]["namespaces"].add(ns_name)
+                    documents[src]["total_chunks"] = ns_stats.vector_count
+                    
+            except:
+                continue
         
-        return summary + "\nUse summarize_document with one of these names."
+        if not documents:
+            return f"No documents with 'source' metadata found.\nTotal vectors: {stats.total_vector_count}"
+        
+        # Format
+        summary = f"Found {len(documents)} document(s):\n\n"
+        for doc, info in documents.items():
+            summary += f"• {doc}\n  └─ Namespaces: {', '.join(sorted(info['namespaces']))}\n\n"
+        
+        return summary + f"\nTotal KB vectors: {stats.total_vector_count:,}"
+        
     except Exception as e:
-        return f"Error listing documents: {str(e)}"
+        return f"Error: {str(e)}"
+
 
 
 @mcp.tool()
@@ -276,17 +301,17 @@ def clear_knowledge_base(confirm: str) -> str:
 @mcp.prompt()
 def weekly_progress_report() -> str:
     """Beautiful weekly summary of my learning journey."""
-    return """Generate my Weekly AI Learning Report
+    return """Create my Weekly AI Learning Report
 
 Include:
 • Documents added this week
 • Total knowledge base size
-• Top 3 insights I’ve internalized
+• Top insights I've internalized
 • My growth trajectory
+• Skills gained
 • One area to focus on next week
 • Motivational quote from my documents (or make one up)
-
-Format like a beautiful newsletter."""
+"""
 
 @mcp.prompt()
 def compare_concepts(concept1: str, concept2: str) -> str:
@@ -315,25 +340,27 @@ Then create a {days}-day study plan for {topic} at {level} level.
 
 Each day:
 • Goal
-• 2–3 key concepts from my documents
+• 2-3 key concepts from my documents
 • One hands-on exercise
 • 5-minute quiz question
 
-Time: 60–90 mins/day. End with motivation."""
+Time: 60-90 mins/day. End with motivation."""
 
 
 @mcp.prompt()
 def generate_quiz(topic: str, num_questions: int = 6, difficulty: str = "medium") -> str:
     """Generate a quiz on {topic} using my private knowledge base."""
-    return f"""Create a {difficulty} quiz on '{topic}' with {num_questions} questions (4 MCQ, 2 short answer).
+    return f"""Create a {difficulty} quiz on '{topic}' with {num_questions} questions .
 
 First: Use list_knowledge_base and ask tool to pull real content from my documents.
 
-Include:
-• Question
-• Options (A-D)
-• Correct answer
-• Detailed explanation using actual paper content
+CRITICAL RULES:
+- Generate {num_questions} questions ONLY
+- Questions FIRST (no answers visible)
+- Answers + explanations at END
+- Use list_documents() + RAG for content
+- Detailed explanation using actual paper content
+- Add one tricky question in the end 
 
 Make it educational and fun."""
 
@@ -347,7 +374,9 @@ def explain_concept(
 ) -> str:
     return f"""You are an exceptional teacher with access to my private documents, explaining '{concept}'.
 
-Level: {{level}} (beginner: simple analogies; intermediate: math; advanced: research).
+Level: {level} (beginner: "Use ONLY simple analogies, daily life examples, easy math/equations. 5th grade reading level. Like explaining to curious high school student.",
+    intermediate: "Include basic math/formulas. College freshman level.",
+    advanced: "Research-level depth, proofs, math-heavy, citations.").
 
 RAG context: {{context}}
 
